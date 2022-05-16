@@ -107,7 +107,7 @@ async function run() {
 
         //warning
         // getting available slots ,(this is not the proper way  to query  soooo use (aggregate lookup, pipeline , match, group)
-        app.get((`/available`), async (req, res) => {
+        app.get(`/available`, async (req, res) => {
             const date = req.query.date;
 
             //step 1 : get all services
