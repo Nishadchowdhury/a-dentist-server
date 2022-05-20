@@ -2,10 +2,13 @@ const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 const jwt = require('jsonwebtoken');
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const { response } = require('express');
 var nodemailer = require('nodemailer');
 var sgTransport = require('nodemailer-sendgrid-transport');
+
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -87,6 +90,42 @@ function sendAppointmentEmail(booking) {
 }
 
 
+//send email function
+function sendPaymentConfirmationEmail(booking) {
+    const { treatment, date, patientName, patientEmail, time } = booking;
+
+    //emailBody
+    var email = {
+        from: process.env.EMAIL_SENDER,
+        to: patientEmail,
+        subject: `We received your payment for ${treatment} is on ${date} at ${time} is Confirmed `,
+        text: `Your payment for this Appointment ${treatment} is on ${date} at ${time} is Confirmed `,
+        html: `
+        <div>
+        <p> Hello ${patientName} <p>
+        <h1>Thank you for your payment </h1>
+        <h2>We have receive your payment </h2>
+
+        <h3>Our Address </h3>
+        <p>Andor killa Bandorban</p>
+        <p>bangladesh</p>
+        <a href="https://www.facebook.com/NishadChowdhury.fb" > Out Owner in Facebook  <b> unsubscribe </b> </a>
+        </div>
+        `
+    };
+
+    emailClient.sendMail(email, function (err, info) {
+        if (err) {
+            console.log(err);
+        }
+        else {
+            console.log('Message sent: ' + info);
+        }
+    });
+
+}
+
+
 
 async function run() {
 
@@ -96,6 +135,7 @@ async function run() {
         const bookingCollections = client.db("doctors_portal").collection("bookings");
         const userCollections = client.db("doctors_portal").collection("users");
         const doctorCollections = client.db("doctors_portal").collection("doctors");
+        const paymentCollections = client.db("doctors_portal").collection("payment");
 
 
         const verifyAdmin = async (req, res, next) => {
@@ -206,7 +246,6 @@ async function run() {
          * app.patch('./booking:/id) //  update a booking data 
          * app.delete('./booking:/id) //  delete a specific booking
          *
-         
          */
 
 
@@ -222,6 +261,33 @@ async function run() {
             else {
                 return res.status(403).send({ message: 'Forbidden access' });
             }
+        })
+
+
+        app.get('/booking/:id', verifyJWT, async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: ObjectId(id) }
+            const booking = await bookingCollections.findOne(query);
+            res.send(booking);
+        })
+
+
+
+        app.patch('/booking/:id', verifyJWT, async (req, res) => {
+            const id = req.params.id;
+            const payment = req.body;
+            const filter = { _id: ObjectId(id) }
+            const updateDoc = {
+                $set: {
+                    paid: true,
+                    transactionId: payment.transactionId
+                },
+            };
+            const result = await paymentCollections.insertOne(payment)
+            const updatedBooking = await bookingCollections.updateOne(filter, updateDoc);
+
+            res.send(updateDoc);
+
         })
 
 
@@ -265,6 +331,24 @@ async function run() {
             const query = { email: email }
             const result = await doctorCollections.deleteOne(query);
             res.send(result);
+        })
+
+
+
+        //payment payment payment payment payment payment payment payment payment payment 
+
+        app.post('/create-payment-intent', verifyJWT, async (req, res) => {
+            // const { price } = req.body;
+            const service = req.body;
+            const price = service.price;
+            const amount = price * 100;
+
+            const paymentIntent = await stripe.paymentIntents.create({
+                amount: amount,
+                currency: "usd",
+                payment_method_types: ['card']
+            });
+            res.send({ clientSecret: paymentIntent.client_secret })
         })
 
 
